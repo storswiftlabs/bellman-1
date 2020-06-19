@@ -155,29 +155,39 @@ impl DensityTracker {
     /// Extend by concatenating `other`. If `is_input_density` is true, then we are tracking an input density,
     /// and other may contain a redundant input for the `One` element. Coalesce those as needed and track the result.
     pub fn extend(&mut self, other: Self, is_input_density: bool) {
+        if other.bv.is_empty() {
+            // Nothing to do if other is empty.
+            return;
+        }
+
+        if self.bv.is_empty() {
+            // If self is empty, assume other's density.
+            self.total_density = other.total_density;
+            self.bv = other.bv;
+            return;
+        }
+
         if is_input_density {
-            if !other.bv.is_empty() {
-                if other.bv[0] {
-                    // If the bit is set for other's first input,
+            // Input densities need special handling to coalesce their first inputs.
 
-                    let first_input_bit_set = !self.bv.is_empty() && self.bv[0];
-                    // If own first input is also set, decrement total density so the final total density sum doesn't overcount.
-                    self.total_density -= first_input_bit_set as usize;
-
-                    if !self.bv.is_empty() {
-                        // Either set the bit for self's first input (if there is one),
-                        self.bv.set(0, true);
-                    } else {
-                        // Or else add a bit so other's first input becomes self's first.
-                        self.bv.push(true);
-                    }
+            if other.bv[0] {
+                // If other's first bit is set,
+                if self.bv[0] {
+                    // And own first bit is set, then decrement total density so the final sum doesn't overcount.
+                    self.total_density -= 1;
+                } else {
+                    // Otherwise, set own first bit.
+                    self.bv.set(0, true);
                 }
             }
-
+            // Now discard other's first bit, having accounted for it above, and extend self by remaining bits.
             self.bv.extend(other.bv.iter().skip(1));
         } else {
+            // Not an input density, just extend straightforwardly.
             self.bv.extend(other.bv);
         }
+
+        // Since any needed adjustments to total densities have been made, just sum the totals and keep the sum.
         self.total_density += other.total_density;
     }
 }
