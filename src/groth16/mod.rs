@@ -10,6 +10,7 @@ use crate::SynthesisError;
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use memmap::{Mmap, MmapOptions};
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::mem;
@@ -573,92 +574,130 @@ impl<E: Engine> Parameters<E> {
     }
 
     pub fn read<R: Read>(mut reader: R, checked: bool) -> io::Result<Self> {
-        let read_g1 = |reader: &mut R| -> io::Result<E::G1Affine> {
-            let mut repr = <E::G1Affine as CurveAffine>::Uncompressed::empty();
-            reader.read_exact(repr.as_mut())?;
-
-            if checked {
-                repr.into_affine()
-            } else {
-                repr.into_affine_unchecked()
-            }
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-            .and_then(|e| {
-                if e.is_zero() {
-                    Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "point at infinity",
-                    ))
+        let read_g1 =
+            |repr: <E::G1Affine as CurveAffine>::Uncompressed| -> io::Result<E::G1Affine> {
+                if checked {
+                    repr.into_affine()
                 } else {
-                    Ok(e)
+                    repr.into_affine_unchecked()
                 }
-            })
-        };
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+                .and_then(|e| {
+                    if e.is_zero() {
+                        Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "point at infinity",
+                        ))
+                    } else {
+                        Ok(e)
+                    }
+                })
+            };
 
-        let read_g2 = |reader: &mut R| -> io::Result<E::G2Affine> {
-            let mut repr = <E::G2Affine as CurveAffine>::Uncompressed::empty();
-            reader.read_exact(repr.as_mut())?;
-
-            if checked {
-                repr.into_affine()
-            } else {
-                repr.into_affine_unchecked()
-            }
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-            .and_then(|e| {
-                if e.is_zero() {
-                    Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "point at infinity",
-                    ))
+        let read_g2 =
+            |repr: <E::G2Affine as CurveAffine>::Uncompressed| -> io::Result<E::G2Affine> {
+                if checked {
+                    repr.into_affine()
                 } else {
-                    Ok(e)
+                    repr.into_affine_unchecked()
                 }
-            })
-        };
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+                .and_then(|e| {
+                    if e.is_zero() {
+                        Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "point at infinity",
+                        ))
+                    } else {
+                        Ok(e)
+                    }
+                })
+            };
+
+        let g1_size = std::mem::size_of::<<E::G1Affine as CurveAffine>::Uncompressed>();
+        let g2_size = std::mem::size_of::<<E::G2Affine as CurveAffine>::Uncompressed>();
 
         let vk = VerifyingKey::<E>::read(&mut reader)?;
 
-        let mut h = vec![];
-        let mut l = vec![];
-        let mut a = vec![];
-        let mut b_g1 = vec![];
-        let mut b_g2 = vec![];
-
-        {
+        let h: Vec<E::G1Affine> = {
             let len = reader.read_u32::<BigEndian>()? as usize;
-            for _ in 0..len {
-                h.push(read_g1(&mut reader)?);
-            }
-        }
+            let mut buffer = vec![0u8; g1_size * len];
+            reader.read_exact(&mut buffer)?;
+            let uncomps = unsafe {
+                std::slice::from_raw_parts(
+                    buffer.as_ptr() as *const <E::G1Affine as CurveAffine>::Uncompressed,
+                    len,
+                )
+            };
+            uncomps
+                .into_par_iter()
+                .map(|u| read_g1(*u))
+                .collect::<io::Result<Vec<E::G1Affine>>>()?
+        };
 
-        {
+        let l: Vec<E::G1Affine> = {
             let len = reader.read_u32::<BigEndian>()? as usize;
-            for _ in 0..len {
-                l.push(read_g1(&mut reader)?);
-            }
-        }
+            let mut buffer = vec![0u8; g1_size * len];
+            reader.read_exact(&mut buffer)?;
+            let uncomps = unsafe {
+                std::slice::from_raw_parts(
+                    buffer.as_ptr() as *const <E::G1Affine as CurveAffine>::Uncompressed,
+                    len,
+                )
+            };
+            uncomps
+                .into_par_iter()
+                .map(|u| read_g1(*u))
+                .collect::<io::Result<Vec<E::G1Affine>>>()?
+        };
 
-        {
+        let a: Vec<E::G1Affine> = {
             let len = reader.read_u32::<BigEndian>()? as usize;
-            for _ in 0..len {
-                a.push(read_g1(&mut reader)?);
-            }
-        }
+            let mut buffer = vec![0u8; g1_size * len];
+            reader.read_exact(&mut buffer)?;
+            let uncomps = unsafe {
+                std::slice::from_raw_parts(
+                    buffer.as_ptr() as *const <E::G1Affine as CurveAffine>::Uncompressed,
+                    len,
+                )
+            };
+            uncomps
+                .into_par_iter()
+                .map(|u| read_g1(*u))
+                .collect::<io::Result<Vec<E::G1Affine>>>()?
+        };
 
-        {
+        let b_g1: Vec<E::G1Affine> = {
             let len = reader.read_u32::<BigEndian>()? as usize;
-            for _ in 0..len {
-                b_g1.push(read_g1(&mut reader)?);
-            }
-        }
+            let mut buffer = vec![0u8; g1_size * len];
+            reader.read_exact(&mut buffer)?;
+            let uncomps = unsafe {
+                std::slice::from_raw_parts(
+                    buffer.as_ptr() as *const <E::G1Affine as CurveAffine>::Uncompressed,
+                    len,
+                )
+            };
+            uncomps
+                .into_par_iter()
+                .map(|u| read_g1(*u))
+                .collect::<io::Result<Vec<E::G1Affine>>>()?
+        };
 
-        {
+        let b_g2: Vec<E::G2Affine> = {
             let len = reader.read_u32::<BigEndian>()? as usize;
-            for _ in 0..len {
-                b_g2.push(read_g2(&mut reader)?);
-            }
-        }
+            let mut buffer = vec![0u8; g2_size * len];
+            reader.read_exact(&mut buffer)?;
+            let uncomps = unsafe {
+                std::slice::from_raw_parts(
+                    buffer.as_ptr() as *const <E::G2Affine as CurveAffine>::Uncompressed,
+                    len,
+                )
+            };
+            uncomps
+                .into_par_iter()
+                .map(|u| read_g2(*u))
+                .collect::<io::Result<Vec<E::G2Affine>>>()?
+        };
 
         Ok(Parameters {
             vk,
