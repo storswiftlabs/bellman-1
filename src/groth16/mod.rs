@@ -617,10 +617,7 @@ impl<E: Engine> Parameters<E> {
         let g1_size = std::mem::size_of::<<E::G1Affine as CurveAffine>::Uncompressed>();
         let g2_size = std::mem::size_of::<<E::G2Affine as CurveAffine>::Uncompressed>();
 
-        let vk = VerifyingKey::<E>::read(&mut reader)?;
-
-        let h: Vec<E::G1Affine> = {
-            let len = reader.read_u32::<BigEndian>()? as usize;
+        let get_g1s = |reader: &mut R, len: usize| -> Result<Vec<E::G1Affine>, std::io::Error> {
             let mut buffer = vec![0u8; g1_size * len];
             reader.read_exact(&mut buffer)?;
             let uncomps = unsafe {
@@ -632,59 +629,10 @@ impl<E: Engine> Parameters<E> {
             uncomps
                 .into_par_iter()
                 .map(|u| read_g1(*u))
-                .collect::<io::Result<Vec<E::G1Affine>>>()?
+                .collect::<io::Result<Vec<E::G1Affine>>>()
         };
 
-        let l: Vec<E::G1Affine> = {
-            let len = reader.read_u32::<BigEndian>()? as usize;
-            let mut buffer = vec![0u8; g1_size * len];
-            reader.read_exact(&mut buffer)?;
-            let uncomps = unsafe {
-                std::slice::from_raw_parts(
-                    buffer.as_ptr() as *const <E::G1Affine as CurveAffine>::Uncompressed,
-                    len,
-                )
-            };
-            uncomps
-                .into_par_iter()
-                .map(|u| read_g1(*u))
-                .collect::<io::Result<Vec<E::G1Affine>>>()?
-        };
-
-        let a: Vec<E::G1Affine> = {
-            let len = reader.read_u32::<BigEndian>()? as usize;
-            let mut buffer = vec![0u8; g1_size * len];
-            reader.read_exact(&mut buffer)?;
-            let uncomps = unsafe {
-                std::slice::from_raw_parts(
-                    buffer.as_ptr() as *const <E::G1Affine as CurveAffine>::Uncompressed,
-                    len,
-                )
-            };
-            uncomps
-                .into_par_iter()
-                .map(|u| read_g1(*u))
-                .collect::<io::Result<Vec<E::G1Affine>>>()?
-        };
-
-        let b_g1: Vec<E::G1Affine> = {
-            let len = reader.read_u32::<BigEndian>()? as usize;
-            let mut buffer = vec![0u8; g1_size * len];
-            reader.read_exact(&mut buffer)?;
-            let uncomps = unsafe {
-                std::slice::from_raw_parts(
-                    buffer.as_ptr() as *const <E::G1Affine as CurveAffine>::Uncompressed,
-                    len,
-                )
-            };
-            uncomps
-                .into_par_iter()
-                .map(|u| read_g1(*u))
-                .collect::<io::Result<Vec<E::G1Affine>>>()?
-        };
-
-        let b_g2: Vec<E::G2Affine> = {
-            let len = reader.read_u32::<BigEndian>()? as usize;
+        let get_g2s = |reader: &mut R, len: usize| -> Result<Vec<E::G2Affine>, std::io::Error> {
             let mut buffer = vec![0u8; g2_size * len];
             reader.read_exact(&mut buffer)?;
             let uncomps = unsafe {
@@ -696,7 +644,34 @@ impl<E: Engine> Parameters<E> {
             uncomps
                 .into_par_iter()
                 .map(|u| read_g2(*u))
-                .collect::<io::Result<Vec<E::G2Affine>>>()?
+                .collect::<io::Result<Vec<E::G2Affine>>>()
+        };
+
+        let vk = VerifyingKey::<E>::read(&mut reader)?;
+
+        let h: Vec<E::G1Affine> = {
+            let len = reader.read_u32::<BigEndian>()? as usize;
+            get_g1s(&mut reader, len)?
+        };
+
+        let l: Vec<E::G1Affine> = {
+            let len = reader.read_u32::<BigEndian>()? as usize;
+            get_g1s(&mut reader, len)?
+        };
+
+        let a: Vec<E::G1Affine> = {
+            let len = reader.read_u32::<BigEndian>()? as usize;
+            get_g1s(&mut reader, len)?
+        };
+
+        let b_g1: Vec<E::G1Affine> = {
+            let len = reader.read_u32::<BigEndian>()? as usize;
+            get_g1s(&mut reader, len)?
+        };
+
+        let b_g2: Vec<E::G2Affine> = {
+            let len = reader.read_u32::<BigEndian>()? as usize;
+            get_g2s(&mut reader, len)?
         };
 
         Ok(Parameters {
